@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     sync::{Condvar, Mutex},
 };
 
@@ -37,8 +36,6 @@ impl Semaphore {
 
 #[cfg(test)]
 mod tests {
-    use rand::random;
-
     use super::*;
     use std::{sync::Arc, thread, time::Duration};
 
@@ -85,10 +82,10 @@ mod tests {
             sem4.release();
         });
 
-        t1.join();
-        t2.join();
-        t3.join();
-        t4.join();
+        t1.join().unwrap();
+        t2.join().unwrap();
+        t3.join().unwrap();
+        t4.join().unwrap();
     }
 
     #[test]
@@ -108,7 +105,7 @@ mod tests {
             sem4.release();
         });
 
-        t1.join();
-        t4.join();
+        t1.join().unwrap();
+        t4.join().unwrap();
     }
 }
