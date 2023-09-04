@@ -16,7 +16,7 @@
 //! ```
 //!
 
-use std::{sync::Arc, time::Duration, thread::JoinHandle};
+use std::{sync::Arc, thread::JoinHandle, time::Duration};
 
 use crate::ReaderWriter;
 
@@ -44,7 +44,7 @@ where
             .filter(|s: &Vec<&str>| !s.iter().all(|s| s.is_empty()))
             .collect::<Vec<Vec<&str>>>();
 
-        println!("{commands:#?}");
+        println!("{commands:?}");
 
         let run_commands = commands
             .iter()
@@ -58,10 +58,9 @@ where
                         ("s", delay) => Command::Sleep(delay.parse::<usize>().unwrap()),
                         _ => unreachable!(),
                     })
-                    .collect::<Vec<_>>()
-                    .into()
+                    .collect()
             })
-            .collect::<Vec<Arc<Vec<Command>>>>();
+            .collect::<Vec<Vec<Command>>>();
 
         let threads_handler = run_commands
             .into_iter()
@@ -70,14 +69,14 @@ where
                 let tmp_a = a.clone();
                 // println!("build thread: {t_name}");
                 std::thread::spawn(move || {
-                    for command in run_command.iter() {
+                    for &command in run_command.iter() {
                         match command {
                             Command::Sleep(delay) => {
-                                std::thread::sleep(Duration::from_secs(*delay as u64));
+                                std::thread::sleep(Duration::from_secs(delay as u64));
                                 // println!("[{t_name}] will sleep: {}", delay);
                             }
                             Command::Read(delay) => {
-                                println!("[{t_name}] read: {}", tmp_a.read_for(*delay));
+                                println!("[{t_name}] read: {}", tmp_a.read_for(delay));
                             }
                             Command::Write(delay) => {
                                 let tmp = (0..4)
@@ -87,13 +86,14 @@ where
                                     })
                                     .collect::<Vec<String>>()
                                     .join("");
-                                tmp_a.write_for(tmp.clone(), *delay);
+                                tmp_a.write_for(tmp.clone(), delay);
                                 println!("[{t_name}] wrote: {}", tmp);
                             }
                         }
                     }
                 })
-            }).collect::<Vec<JoinHandle<_>>>();
+            })
+            .collect::<Vec<JoinHandle<_>>>();
 
         for t in threads_handler {
             t.join().unwrap();
