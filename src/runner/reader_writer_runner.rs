@@ -16,11 +16,11 @@
 //! ```
 //!
 
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration, thread::JoinHandle};
 
 use crate::ReaderWriter;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum Command {
     Sleep(usize),
     Read(usize),
@@ -40,65 +40,60 @@ where
 
         let commands = work_set
             .split('\n')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.trim())
-            .map(|s| s.split(' ').map(|s| s.into()).collect::<Vec<String>>())
-            .collect::<Vec<Vec<String>>>();
+            .map(|s| s.split(' ').filter(|s| !s.is_empty()).collect())
+            .filter(|s: &Vec<&str>| !s.iter().all(|s| s.is_empty()))
+            .collect::<Vec<Vec<&str>>>();
 
-        println!("{commands:?}");
+        println!("{commands:#?}");
 
-        let run_commands = &commands
+        let run_commands = commands
             .iter()
-            .map(|commands| {
-                let mut res = vec![];
-                for (now, next) in commands.iter().zip(&commands[1..]) {
-                    match (now.chars().next().unwrap(), next.chars().next().unwrap()) {
-                        ('[', _) => (),
-                        ('r', _) => res.push(Command::Read(next.parse::<usize>().unwrap())),
-                        ('w', _) => res.push(Command::Write(next.parse::<usize>().unwrap())),
-                        ('s', _) => res.push(Command::Sleep(next.parse::<usize>().unwrap())),
-                        _ => (),
-                    }
-                }
-                res
+            .map(|command| {
+                command
+                    .windows(2)
+                    .filter(|v| ["r", "w", "s"].contains(&v[0]))
+                    .map(|v| match (v[0], v[1]) {
+                        ("r", delay) => Command::Read(delay.parse::<usize>().unwrap()),
+                        ("w", delay) => Command::Write(delay.parse::<usize>().unwrap()),
+                        ("s", delay) => Command::Sleep(delay.parse::<usize>().unwrap()),
+                        _ => unreachable!(),
+                    })
+                    .collect::<Vec<_>>()
+                    .into()
             })
-            .collect::<Vec<Vec<Command>>>();
+            .collect::<Vec<Arc<Vec<Command>>>>();
 
-        let thread_names = &commands
-            .iter()
-            .map(|v| v[0].clone())
-            .collect::<Vec<String>>();
-
-        let mut threads_handler = vec![];
-
-        for (i, run_command) in run_commands.iter().enumerate() {
-            let tmp_a = a.clone();
-            let commands = run_command.clone();
-            let t_name = thread_names[i].clone();
-
-            threads_handler.push(std::thread::spawn(move || {
-                for command in commands {
-                    match command {
-                        Command::Sleep(delay) => {
-                            std::thread::sleep(Duration::from_secs(delay as u64))
-                        }
-                        Command::Read(delay) => {
-                            println!("[{t_name}] read: {}", tmp_a.read_for(delay));
-                        }
-                        Command::Write(delay) => {
-                            let mut tmp = vec![];
-                            for _ in 0..4 {
-                                let offset = rand::random::<u8>() % 26;
-                                let ch = ('a' as u8 + offset) as char;
-                                tmp.push(ch.to_string())
+        let threads_handler = run_commands
+            .into_iter()
+            .zip(commands.iter().map(|v| v[0].to_string()))
+            .map(|(run_command, t_name)| {
+                let tmp_a = a.clone();
+                // println!("build thread: {t_name}");
+                std::thread::spawn(move || {
+                    for command in run_command.iter() {
+                        match command {
+                            Command::Sleep(delay) => {
+                                std::thread::sleep(Duration::from_secs(*delay as u64));
+                                // println!("[{t_name}] will sleep: {}", delay);
                             }
-                            tmp_a.write_for(tmp.join(""), delay);
-                            println!("[{t_name}] wrote: {}", tmp.join(""));
+                            Command::Read(delay) => {
+                                println!("[{t_name}] read: {}", tmp_a.read_for(*delay));
+                            }
+                            Command::Write(delay) => {
+                                let tmp = (0..4)
+                                    .map(|_| {
+                                        (('a' as u8 + (rand::random::<u8>() % 26)) as char)
+                                            .to_string()
+                                    })
+                                    .collect::<Vec<String>>()
+                                    .join("");
+                                tmp_a.write_for(tmp.clone(), *delay);
+                                println!("[{t_name}] wrote: {}", tmp);
+                            }
                         }
                     }
-                }
-            }));
-        }
+                })
+            }).collect::<Vec<JoinHandle<_>>>();
 
         for t in threads_handler {
             t.join().unwrap();
